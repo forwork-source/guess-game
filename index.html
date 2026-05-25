@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Guess it | خمن الشخصية</title>
+    <link rel="manifest" href="data:application/manifest+json,{
+        \"name\":\"Guess it - خمن الشخصية\",
+        \"short_name\":\"Guess it\",
+        \"start_url\":\".\",
+        \"display\":\"standalone\",
+        \"theme_color\":\"#2c7da0\",
+        \"background_color\":\"#eef2f5\",
+        \"icons\":[{
+            \"src\":\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%232c7da0'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white' font-family='Arial'%3E?%3C/text%3E%3C/svg%3E\",
+            \"sizes\":\"any\",
+            \"type\":\"image/svg+xml\"
+        }]
+    }">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: 'Segoe UI', 'Cairo', sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+        .theme-default {
+            --bg: #eef2f5; --card: #ffffff; --primary: #2c7da0; --accent: #2a9d8f;
+            --danger: #e76f51; --text-dark: #2c3e50; --text-light: #6c757d;
+            --gray: #ced4da; --border: #e0e0e0;
+        }
+        .theme-dark {
+            --bg: #121212; --card: #1e1e2f; --primary: #bb86fc; --accent: #03dac6;
+            --danger: #cf6679; --text-dark: #ffffff; --text-light: #bbbbbb;
+            --gray: #333333; --border: #333;
+        }
+        .theme-pink {
+            --bg: #fdf2f8; --card: #ffffff; --primary: #d53f8c; --accent: #9f7aea;
+            --danger: #ed8936; --text-dark: #702459; --text-light: #9b6b7e;
+            --gray: #fbb6ce; --border: #f0d0e0;
+        }
+        .theme-green {
+            --bg: #e6f4ea; --card: #ffffff; --primary: #2e7d32; --accent: #81c784;
+            --danger: #e57373; --text-dark: #1b5e20; --text-light: #558b2f;
+            --gray: #c8e6c9; --border: #a5d6a7;
+        }
+        .theme-gradient {
+            --bg: transparent; --card: rgba(25, 35, 50, 0.85); --primary: #89cff0;
+            --accent: #48c9b0; --danger: #f1948a; --text-dark: #f0f3f5;
+            --text-light: #d5dbdb; --gray: #4a6a8a; --border: rgba(255,255,255,0.2);
+        }
+        body.theme-gradient {
+            background: linear-gradient(270deg, #0a2f5a, #0a0f1a, #2c3e50, #0a2f5a);
+            background-size: 400% 400%;
+            animation: gradientShift 12s ease infinite;
+        }
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        body { background-color: var(--bg); color: var(--text-dark); }
+
+        .screen {
+            display: none; flex-direction: column; width: 100%; height: 100%;
+            padding: 20px; overflow-y: auto; align-items: center;
+        }
+        .active { display: flex; }
+
+        button, .file-label {
+            background: var(--card); border: none; padding: 12px 20px;
+            margin: 8px; border-radius: 60px; font-size: 1rem; font-weight: bold;
+            cursor: pointer; width: 85%; max-width: 350px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1); transition: 0.2s; color: var(--text-dark);
+        }
+        .btn-success { background: var(--accent); color: white; }
+        .btn-back { background: var(--gray); color: var(--text-dark); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-online { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .file-label {
+            background: rgba(44,125,160,0.1); border: 1px dashed var(--primary);
+            display: inline-block; text-align: center;
+        }
+        .scroll-area {
+            background: rgba(0,0,0,0.02); border-radius: 24px; padding: 15px;
+            width: 100%; flex: 1; overflow-y: auto; margin-bottom: 10px;
+        }
+        .img-pick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .img-card {
+            background: var(--card); border-radius: 24px; overflow: hidden;
+            border: 2px solid transparent; cursor: pointer; text-align: center;
+        }
+        .img-card.selected { border-color: var(--accent); transform: scale(1.02); }
+        .img-card img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+        .rename-row {
+            display: flex; gap: 10px; background: var(--card);
+            padding: 10px; border-radius: 20px; margin-bottom: 10px; align-items: center;
+        }
+        .rename-row img { width: 50px; height: 50px; border-radius: 12px; }
+        .rename-row input { flex: 1; padding: 8px; border-radius: 30px; border: 1px solid var(--gray); background: var(--card); color: var(--text-dark); }
+        .image-item {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--card); padding: 8px 12px; border-radius: 20px; margin-bottom: 8px;
+        }
+        .image-item img { width: 45px; height: 45px; border-radius: 12px; object-fit: cover; }
+        .image-item span { flex: 1; font-size: 0.9rem; }
+        .image-item button { width: auto; padding: 6px 12px; margin: 0; background: var(--danger); color: white; font-size: 0.8rem; }
+        .wheel-container { position: relative; display: flex; justify-content: center; margin: 20px; }
+        .wheel-pointer {
+            position: absolute; top: -25px; left: 50%; transform: translateX(-50%);
+            width: 0; height: 0; border-left: 20px solid transparent;
+            border-right: 20px solid transparent; border-top: 35px solid var(--primary); z-index: 10;
+        }
+        #wheel-canvas {
+            width: 260px; height: 260px; border-radius: 50%;
+            border: 4px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 3.5s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        .result-box { background: var(--card); padding: 15px; border-radius: 24px; width: 45%; text-align: center; }
+        .result-box img { width: 100%; border-radius: 16px; }
+        .q-btn {
+            height: 20%; max-height: 80px; font-size: 1.6rem;
+            opacity: 0.3; pointer-events: none; width: 100%; border-radius: 0; margin: 0;
+        }
+        .q-btn.active-turn { background: var(--accent); opacity: 1; pointer-events: auto; color: white; }
+        #timer-display { font-size: 6rem; font-weight: bold; color: var(--danger); margin: 20px; }
+        h2, h3 { margin: 10px 0; color: var(--primary); }
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: var(--danger); color: white; padding: 10px 20px;
+            border-radius: 50px; font-size: 0.9rem; z-index: 1000;
+            animation: fadeOut 2s ease forwards;
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; bottom: 30px; }
+            70% { opacity: 1; bottom: 30px; }
+            100% { opacity: 0; bottom: 80px; visibility: hidden; }
+        }
+
+        #screen-splash {
+            display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, rgba(44,125,160,0.15) 0%, var(--bg) 70%);
+            z-index: 1000; justify-content: center; align-items: center; flex-direction: column;
+            opacity: 1; transition: opacity 0.6s ease;
+        }
+        #screen-splash.fade-out { opacity: 0; pointer-events: none; }
+        .splash-content { text-align: center; animation: splash-pop 0.8s ease forwards; }
+        @keyframes splash-pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .splash-logo {
+            font-size: 5rem; font-weight: bold; color: var(--primary);
+            text-shadow: 0 0 20px rgba(255,255,255,0.3);
+            animation: pulse 1.5s ease-in-out infinite alternate; margin-bottom: 10px;
+        }
+        @keyframes pulse { 0% { transform: scale(1); } 100% { transform: scale(1.1); } }
+        .splash-title { font-size: 2rem; color: var(--text-dark); margin: 0; }
+        .splash-subtitle { font-size: 1.2rem; color: var(--text-light); margin: 5px 0 20px; }
+
+        .category-item, .theme-accordion {
+            background: var(--card); border-radius: 20px; margin-bottom: 15px;
+            overflow: hidden; border: 1px solid var(--border);
+        }
+        .category-header, .theme-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px; cursor: pointer; background: var(--card);
+        }
+        .category-header .title, .theme-header .title { font-weight: bold; color: var(--primary); }
+        .category-header .arrow, .theme-header .arrow { font-size: 1.2rem; transition: transform 0.3s ease; color: var(--text-light); }
+        .category-item.open .arrow, .theme-accordion.open .arrow { transform: rotate(-180deg); }
+        .category-body, .theme-body { max-height: 0; overflow: hidden; transition: max-height 0.4s ease-in-out; }
+        .category-body-inner, .theme-body-inner { padding: 0 15px 15px; }
+        .category-item.open .category-body, .theme-accordion.open .theme-body { max-height: 9999px; }
+        .theme-btn {
+            display: block; width: 100%; margin: 5px 0; padding: 12px;
+            border-radius: 40px; font-weight: bold; border: 2px solid transparent;
+            cursor: pointer; transition: 0.2s;
+        }
+        .room-code {
+            font-size: 3rem; font-weight: bold; letter-spacing: 10px;
+            color: var(--primary); background: var(--card);
+            padding: 15px 30px; border-radius: 20px; margin: 20px 0;
+            border: 2px dashed var(--primary);
+        }
+        .input-room {
+            width: 100%; max-width: 300px; padding: 15px;
+            font-size: 1.5rem; text-align: center; border-radius: 20px;
+            border: 2px solid var(--primary); background: var(--card); color: var(--text-dark);
+            letter-spacing: 10px;
+        }
+    </style>
+</head>
+<body class="theme-default">
+
+<div id="screen-splash" class="active">
+    <div class="splash-content">
+        <div class="splash-logo">؟</div>
+        <h1 class="splash-title">Guess it</h1>
+        <p class="splash-subtitle">خمن الشخصية</p>
+    </div>
+</div>
+
+<div id="screen-start" class="screen">
+    <h1 style="color:var(--primary);">Guess it</h1>
+    <p>خمن الشخصية</p>
+    <button class="btn-success" onclick="startFlow()">🎮 ابدأ التحدي (محلي)</button>
+    <button class="btn-online" onclick="showScreen('screen-online')">🌐 طور الأونلاين</button>
+    <button class="btn-back" onclick="showScreen('screen-settings')">⚙️ الإعدادات</button>
+</div>
+
+<div id="screen-online" class="screen">
+    <h2>🌐 طور الأونلاين</h2>
+    <div style="width:100%; text-align:center;">
+        <h3>🎯 إنشاء غرفة جديدة</h3>
+        <button class="btn-online" onclick="createRoom()">إنشاء غرفة</button>
+        <div id="room-created" style="display:none;">
+            <p>🎉 تم إنشاء الغرفة! الرقم السري:</p>
+            <div class="room-code" id="room-code-display">----</div>
+            <p id="waiting-text">⏳ في انتظار انضمام اللاعب الثاني...</p>
+            <p id="player-joined-text" style="display:none; color: var(--accent);">✅ اللاعب الثاني انضم! جاري البدء...</p>
+        </div>
+    </div>
+    <hr style="width:100%; margin: 20px 0;">
+    <div style="width:100%; text-align:center;">
+        <h3>🔑 انضم إلى غرفة</h3>
+        <input type="text" class="input-room" id="join-room-input" placeholder="----" maxlength="4" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <br>
+        <button class="btn-success" onclick="joinRoom()">انضم</button>
+        <p id="join-status" style="color: var(--danger);"></p>
+    </div>
+    <button class="btn-back" onclick="showScreen('screen-start')">🔙 رجوع</button>
+</div>
+
+<div id="screen-settings" class="screen">
+    <h3>⚙️ الإعدادات</h3>
+    <div class="scroll-area">
+        <label>⏱️ وقت الدور: <span id="timer-val">30</span> ث</label>
+        <input type="range" min="10" max="120" value="30" oninput="updateTime(this.value)" style="width:100%">
+        <hr>
+        <div class="theme-accordion" id="theme-accordion">
+            <div class="theme-header" onclick="toggleThemeAccordion()">
+                <span class="title">🎨 الثيمات</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div class="theme-body">
+                <div class="theme-body-inner">
+                    <button class="theme-btn" onclick="setTheme('default')" style="background:#eef2f5; color:#2c7da0;">الهادئ</button>
+                    <button class="theme-btn" onclick="setTheme('dark')" style="background:#121212; color:#bb86fc;">الداكن</button>
+                    <button class="theme-btn" onclick="setTheme('pink')" style="background:#fdf2f8; color:#d53f8c;">الزهري</button>
+                    <button class="theme-btn" onclick="setTheme('green')" style="background:#e6f4ea; color:#2e7d32;">الأخضر</button>
+                    <button class="theme-btn" onclick="setTheme('gradient')" style="background:linear-gradient(270deg,#0a2f5a,#0a0f1a,#2c3e50); color:white;">تدرج متحرك</button>
+                </div>
+            </div>
+        </div>
+        <hr>
+        <button class="btn-success" onclick="showScreen('screen-rename')">✏️ إعادة تسمية الصور</button>
+        <hr>
+        <h4>➕ إضافة تصنيف</h4>
+        <div style="display:flex; gap:8px;">
+            <input type="text" id="new-cat-name" placeholder="اسم التصنيف..." style="flex:1; border-radius:60px; padding:10px; border:1px solid var(--gray); background:var(--card); color:var(--text-dark);">
+            <button class="btn-success" onclick="createNewCat()" style="width:auto;">إضافة</button>
+        </div>
+        <div id="settings-cat-list" style="margin-top:15px"></div>
+    </div>
+    <button class="btn-back" onclick="showScreen('screen-start')">🔙 رجوع</button>
+</div>
+
+<div id="screen-rename" class="screen">
+    <h3>✏️ تعديل الأسماء</h3>
+    <select id="rename-cat-select" onchange="renderRenameList(this.value)" style="width:90%; padding:10px; border-radius:60px; margin-bottom:10px; background:var(--card); color:var(--text-dark);"></select>
+    <div id="rename-area" class="scroll-area"></div>
+    <button class="btn-success" onclick="showScreen('screen-settings')">💾 تم</button>
+    <button class="btn-back" onclick="showScreen('screen-settings')">🔙 رجوع</button>
+</div>
+
+<div id="screen-pick-cat" class="screen">
+    <h2 id="pick-cat-title">اختر تصنيفاً</h2>
+    <div id="pick-cat-list" class="scroll-area"></div>
+    <button class="btn-back" onclick="goBackFromCat()">🔙 رجوع</button>
+</div>
+
+<div id="screen-pick-img" class="screen">
+    <h2 id="pick-img-title">اختر شخصيتك</h2>
+    <div class="scroll-area"><div id="pick-img-grid" class="img-pick-grid"></div></div>
+    <button id="confirm-img-btn" class="btn-success" onclick="confirmImageSelection()" disabled>✅ تأكيد</button>
+    <button class="btn-back" onclick="goBackFromImg()">🔙 رجوع</button>
+</div>
+
+<div id="screen-wheel" class="screen">
+    <h2>🎡 من يبدأ؟</h2>
+    <div class="wheel-container"><div class="wheel-pointer"></div><canvas id="wheel-canvas" width="300" height="300"></canvas></div>
+    <button id="spin-btn" class="btn-success">🎡 تدوير</button>
+    <div id="wheel-result" style="margin-top:15px; font-weight:bold;"></div>
+</div>
+
+<div id="screen-game" class="screen" style="padding:0">
+    <button id="q-p1" class="q-btn" onclick="manualToggle(2)">اللاعب 1</button>
+    <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+        <div id="timer-display">30</div>
+        <button class="btn-danger" onclick="endGame()">🔍 كشف النتائج</button>
+    </div>
+    <button id="q-p2" class="q-btn" onclick="manualToggle(1)">اللاعب 2</button>
+</div>
+
+<div id="screen-results" class="screen">
+    <h2>🏆 النتائج</h2>
+    <div id="final-results" style="display:flex; gap:10px; justify-content:center; width:100%;"></div>
+    <button class="btn-success" onclick="startFlow()">🔄 لعب مرة أخرى</button>
+    <button class="btn-back" onclick="showScreen('screen-start')">🏠 الرئيسية</button>
+</div>
+
+<script>
+    const socket = io();
+    let currentRoom = null, isRoomHost = false;
+
+    socket.on('sync-data', (serverCategories) => {
+        categories = serverCategories;
+        localStorage.setItem('guess_it_v17', JSON.stringify(categories));
+        renderSettings();
+    });
+
+    function syncToServer() { socket.emit('update-categories', categories); }
+
+    socket.on('player-joined', () => {
+        document.getElementById('waiting-text').style.display = 'none';
+        document.getElementById('player-joined-text').style.display = 'block';
+        setTimeout(() => startOnlineGame(), 1500);
+    });
+
+    socket.on('game-update', (data) => {
+        if (data.turn) state.currentTurn = data.turn;
+        if (data.scores) state.scores = data.scores;
+    });
+
+    socket.on('characters-shared', (chars) => {
+        if (!isRoomHost) { state.p1Data = chars.p1; state.p2Data = chars.p2; }
+    });
+
+    function createRoom() {
+        socket.emit('create-room', (res) => {
+            if (res.success) {
+                currentRoom = res.roomCode; isRoomHost = true;
+                document.getElementById('room-code-display').innerText = currentRoom;
+                document.getElementById('room-created').style.display = 'block';
+                showToast('✅ تم إنشاء الغرفة!');
+            }
+        });
+    }
+
+    function joinRoom() {
+        const code = document.getElementById('join-room-input').value.trim();
+        if (code.length !== 4) return document.getElementById('join-status').innerText = '❌ 4 أرقام';
+        socket.emit('join-room', code, (res) => {
+            if (res.success) { currentRoom = code; isRoomHost = false; startOnlineGame(); }
+            else document.getElementById('join-status').innerText = '❌ ' + res.error;
+        });
+    }
+
+    function startOnlineGame() {
+        clearInterval(timerInterval);
+        if (!categories.length || !categories.some(c => c.imgs.length)) { alert('أضف تصنيفات أولاً'); return; }
+        state = { stage: 1, p1Data: null, p2Data: null, tempSelectedImg: null, currentTurn: 1 };
+        renderPickCat();
+    }
+
+    let audioCtx = null;
+    function playSound(type) {
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime, osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'sine'; gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+            if (type === 'click') { osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(440, now + 0.1); osc.stop(now + 0.2); }
+            else if (type === 'spin') { osc.frequency.setValueAtTime(220, now); osc.frequency.exponentialRampToValueAtTime(880, now + 0.3); osc.stop(now + 0.35); }
+            else if (type === 'win') { osc.frequency.setValueAtTime(523.25, now); osc.frequency.setValueAtTime(659.25, now + 0.1); osc.frequency.setValueAtTime(783.99, now + 0.2); osc.stop(now + 0.4); }
+            osc.start();
+        } catch(e) {}
+    }
+
+    function showToast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.innerText = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2000); }
+
+    function setTheme(name) {
+        document.body.classList.remove('theme-default','theme-dark','theme-pink','theme-green','theme-gradient');
+        document.body.classList.add(`theme-${name}`);
+        localStorage.setItem('guess_theme', name);
+        if (document.getElementById('screen-wheel').classList.contains('active')) drawWheel();
+        playSound('click');
+    }
+    (s => { if (s && ['default','dark','pink','green','gradient'].includes(s)) setTheme(s); else setTheme('default'); })(localStorage.getItem('guess_theme'));
+
+    let categories = JSON.parse(localStorage.getItem('guess_it_v17')) || [];
+    let config = { time: 30 };
+    let state = { stage: 1, p1Data: null, p2Data: null, tempSelectedImg: null, currentTurn: 1 };
+    let timerInterval, spinning = false;
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if (id === 'screen-settings') renderSettings();
+        if (id === 'screen-rename') populateRenameSelect();
+        if (id === 'screen-wheel') { drawWheel(); document.getElementById('wheel-canvas').style.transform = 'rotate(0deg)'; document.getElementById('wheel-result').innerText = ''; spinning = false; document.getElementById('spin-btn').disabled = false; }
+        if (id === 'screen-online') { document.getElementById('room-created').style.display = 'none'; document.getElementById('join-status').innerText = ''; }
+    }
+    function updateTime(v) { config.time = +v; document.getElementById('timer-val').innerText = v; }
+
+    function toggleCategory(i) { document.querySelector(`.category-item[data-index="${i}"]`)?.classList.toggle('open'); playSound('click'); }
+    function toggleThemeAccordion() { document.getElementById('theme-accordion')?.classList.toggle('open'); playSound('click'); }
+
+    function createNewCat() {
+        const n = document.getElementById('new-cat-name').value.trim();
+        if (!n) return;
+        categories.push({ name: n, imgs: [] });
+        saveAndSync(); renderSettings();
+        document.getElementById('new-cat-name').value = '';
+        playSound('click');
+    }
+
+    function saveAndSync() { localStorage.setItem('guess_it_v17', JSON.stringify(categories)); syncToServer(); }
+
+    function compressImage(file) {
+        return new Promise(resolve => {
+            const r = new FileReader();
+            r.onload = e => {
+                const img = new Image();
+                img.onload = () => { const c = document.createElement('canvas'); c.width = 150; c.height = img.height * (150 / img.width); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); resolve(c.toDataURL('image/jpeg', 0.6)); };
+                img.src = e.target.result;
+            }; r.readAsDataURL(file);
+        });
+    }
+
+    async function addImages(idx, files) {
+        if (!files?.length) return;
+        const arr = Array.from(files), nonDup = arr.filter(f => !categories[idx].imgs.some(img => img.name === f.name.split('.')[0]));
+        if (!nonDup.length) { showToast('❌ جميع الصور مكررة!'); return; }
+        const results = await Promise.all(nonDup.map(async f => ({ src: await compressImage(f), name: f.name.split('.')[0] })));
+        categories[idx].imgs.push(...results);
+        saveAndSync(); renderSettings(); playSound('click');
+        showToast(`✅ ${results.length} صورة`);
+    }
+
+    function deleteImage(ci, ii) { if (confirm('حذف الصورة؟')) { categories[ci].imgs.splice(ii,1); saveAndSync(); renderSettings(); } }
+    function deleteCategory(ci) { if (confirm('حذف التصنيف؟')) { categories.splice(ci,1); saveAndSync(); renderSettings(); } }
+
+    function renderSettings() {
+        document.getElementById('settings-cat-list').innerHTML = categories.map((c,i) => `
+            <div class="category-item" data-index="${i}">
+                <div class="category-header" onclick="toggleCategory(${i})"><span class="title">📁 ${c.name} (${c.imgs.length})</span><span class="arrow">▼</span></div>
+                <div class="category-body"><div class="category-body-inner">
+                    <button onclick="event.stopPropagation(); deleteCategory(${i})" style="background:var(--danger); color:white; border:none; border-radius:40px; padding:4px 12px; font-size:0.8rem;">🗑️ حذف التصنيف</button>
+                    ${c.imgs.length ? c.imgs.map((img,j) => `<div class="image-item"><img src="${img.src}"><span>${img.name}</span><button onclick="event.stopPropagation(); deleteImage(${i},${j})">🗑️</button></div>`).join('') : '<p style="color:var(--text-light);">لا توجد صور</p>'}
+                    <label class="file-label" style="display:block; margin-top:12px;">📁 إضافة صور<input type="file" multiple accept="image/*" onchange="addImages(${i}, this.files)" style="display:none" onclick="event.stopPropagation()"></label>
+                </div></div>
+            </div>`).join('');
+    }
+
+    function populateRenameSelect() {
+        document.getElementById('rename-cat-select').innerHTML = '<option value="">-- اختر تصنيف --</option>' + categories.map((c,i)=>`<option value="${i}">${c.name}</option>`).join('');
+        document.getElementById('rename-area').innerHTML = '';
+    }
+    function renderRenameList(ci) {
+        document.getElementById('rename-area').innerHTML = ci === '' ? '' : categories[ci].imgs.map((img,idx) => `<div class="rename-row"><img src="${img.src}"><input type="text" value="${img.name}" oninput="categories[${ci}].imgs[${idx}].name=this.value; saveAndSync();"></div>`).join('');
+    }
+
+    function startFlow() { clearInterval(timerInterval); if (!categories.length || !categories.some(c=>c.imgs.length)) { alert('أضف تصنيفات أولاً'); return; } state = { stage:1, p1Data:null, p2Data:null, tempSelectedImg:null, currentTurn:1 }; renderPickCat(); playSound('click'); }
+    function renderPickCat() {
+        document.getElementById('pick-cat-title').innerText = `اللاعب ${state.stage===1?1:2}: اختر تصنيفاً`;
+        document.getElementById('pick-cat-list').innerHTML = categories.map((c,i) => `<button style="background:var(--card); color:var(--text-dark); border-radius:40px; margin:5px;" onclick="playSound('click'); renderPickImg(${i})">${c.name}</button>`).join('');
+        showScreen('screen-pick-cat');
+    }
+    function renderPickImg(ci) {
+        document.getElementById('pick-img-title').innerText = `اللاعب ${state.stage===1?1:2}: اختر شخصيتك`;
+        document.getElementById('pick-img-grid').innerHTML = categories[ci].imgs.map((img,i) => `<div class="img-card" onclick="selectImg(this,${ci},${i})"><img src="${img.src}"><p>${img.name}</p></div>`).join('');
+        document.getElementById('confirm-img-btn').disabled = true;
+        showScreen('screen-pick-img'); window.currentCatIdx = ci;
+    }
+    function selectImg(el,ci,ii) { document.querySelectorAll('.img-card').forEach(c=>c.classList.remove('selected')); el.classList.add('selected'); state.tempSelectedImg = categories[ci].imgs[ii]; document.getElementById('confirm-img-btn').disabled = false; }
+    function confirmImageSelection() {
+        playSound('click');
+        if (state.stage===1) { state.p1Data=state.tempSelectedImg; state.stage=2; renderPickCat(); }
+        else { state.p2Data=state.tempSelectedImg; if (currentRoom) socket.emit('share-characters', currentRoom, { p1: state.p1Data, p2: state.p2Data }); showScreen('screen-wheel'); }
+    }
+    function goBackFromCat() { playSound('click'); showScreen('screen-start'); }
+    function goBackFromImg() { playSound('click'); renderPickCat(); }
+
+    function drawWheel() {
+        const c=document.getElementById('wheel-canvas'),ctx=c.getContext('2d'),w=c.width,h=c.height;
+        ctx.clearRect(0,0,w,h); const cx=w/2,cy=h/2,r=w/2-10;
+        const p=getComputedStyle(document.body).getPropertyValue('--primary').trim()||'#2c7da0';
+        const a=getComputedStyle(document.body).getPropertyValue('--accent').trim()||'#2a9d8f';
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,-Math.PI/2,Math.PI/2);ctx.fillStyle=p;ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=4;ctx.stroke();
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,Math.PI/2,-Math.PI/2);ctx.fillStyle=a;ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=4;ctx.stroke();
+        ctx.fillStyle='white';ctx.font='bold 24px "Cairo"';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('1',cx,cy-r/2);ctx.fillText('2',cx,cy+r/2);
+    }
+    function runWheel() {
+        if (spinning) return;
+        playSound('spin'); spinning=true; document.getElementById('spin-btn').disabled=true;
+        document.getElementById('wheel-result').innerText='🌀 جاري التدوير...';
+        const rp=Math.floor(Math.random()*360);
+        document.getElementById('wheel-canvas').style.transform=`rotate(${360*5+rp}deg)`;
+        setTimeout(() => {
+            document.getElementById('wheel-canvas').style.transform=`rotate(${rp}deg)`;
+            const w=((360-rp)%360)<180?1:2;
+            document.getElementById('wheel-result').innerHTML=`🏆 ${w===1?'اللاعب 1':'اللاعب 2'} يبدأ أولاً!`;
+            spinning=false; document.getElementById('spin-btn').disabled=false; playSound('win');
+            if (currentRoom) socket.emit('game-update', currentRoom, { turn: w });
+            setTimeout(()=>startGame(w),1200);
+        },3500);
+    }
+    document.getElementById('spin-btn')?.addEventListener('click',runWheel);
+    window.addEventListener('load',()=>{ drawWheel(); });
+
+    function startGame(fp) { showScreen('screen-game'); state.currentTurn=fp; startTimer(); }
+    function startTimer() {
+        clearInterval(timerInterval); let t=config.time;
+        updateTurnUI(); document.getElementById('timer-display').innerText=t;
+        timerInterval=setInterval(()=>{ t--; document.getElementById('timer-display').innerText=t; if(t<=0) { clearInterval(timerInterval); state.currentTurn=state.currentTurn===1?2:1; startTimer(); } },1000);
+    }
+    function manualToggle(n) { playSound('click'); clearInterval(timerInterval); state.currentTurn=n; startTimer(); }
+    function updateTurnUI() { document.getElementById('q-p1')?.classList.toggle('active-turn',state.currentTurn===1); document.getElementById('q-p2')?.classList.toggle('active-turn',state.currentTurn===2); }
+    function endGame() {
+        playSound('click'); clearInterval(timerInterval);
+        document.getElementById('final-results').innerHTML=`<div class="result-box"><p>👤 لاعب 1</p><img src="${state.p1Data.src}"><p>${state.p1Data.name}</p></div><div class="result-box"><p>👤 لاعب 2</p><img src="${state.p2Data.src}"><p>${state.p2Data.name}</p></div>`;
+        showScreen('screen-results');
+    }
+
+    (function splash(){ const sp=document.getElementById('screen-splash'); const hide=()=>{sp.classList.add('fade-out');setTimeout(()=>{sp.classList.remove('active');sp.style.display='none';showScreen('screen-start');},600);}; const t=setTimeout(hide,2500); sp.addEventListener('click',()=>{clearTimeout(t);hide();}); })();
+
+    renderSettings();
+</script>
+</body>
+</html>
