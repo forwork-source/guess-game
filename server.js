@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 
 const app = express();
@@ -19,7 +18,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 let gameData = { categories: [], rooms: {} };
 
 io.on('connection', (socket) => {
-    console.log('✅ جهاز متصل');
+    console.log('✅ جهاز متصل: ' + socket.id);
 
     socket.emit('sync-data', gameData.categories);
 
@@ -45,6 +44,33 @@ io.on('connection', (socket) => {
         io.to(code).emit('player-joined');
     });
 
+    // إعادة اتصال
+    socket.on('reconnect-room', (code, isHost) => {
+        const room = gameData.rooms[code];
+        if (!room) return socket.emit('sync-data', gameData.categories);
+        socket.join(code);
+        if (!room.players.includes(socket.id)) {
+            room.players.push(socket.id);
+        }
+        io.to(code).emit('player-joined');
+    });
+
+    // مغادرة
+    socket.on('leave-room', (code) => {
+        const room = gameData.rooms[code];
+        if (room) {
+            room.players = room.players.filter(id => id !== socket.id);
+            socket.leave(code);
+            io.to(code).emit('player-left');
+            if (room.players.length === 0) delete gameData.rooms[code];
+        }
+    });
+
+    // شات
+    socket.on('chat-message', (code, msg) => {
+        socket.to(code).emit('chat-message', msg);
+    });
+
     socket.on('share-characters', (code, chars) => {
         socket.to(code).emit('characters-shared', chars);
     });
@@ -55,9 +81,13 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         Object.keys(gameData.rooms).forEach(code => {
-            if (gameData.rooms[code]) {
-                gameData.rooms[code].players = gameData.rooms[code].players.filter(id => id !== socket.id);
-                if (gameData.rooms[code].players.length === 0) delete gameData.rooms[code];
+            const room = gameData.rooms[code];
+            if (room) {
+                room.players = room.players.filter(id => id !== socket.id);
+                io.to(code).emit('player-left');
+                if (room.players.length === 0) {
+                    setTimeout(() => { if (gameData.rooms[code] && gameData.rooms[code].players.length === 0) delete gameData.rooms[code]; }, 300000);
+                }
             }
         });
     });
