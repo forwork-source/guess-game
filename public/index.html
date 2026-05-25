@@ -98,6 +98,44 @@
         }
         .img-card.selected { border-color: var(--accent); transform: scale(1.02); }
         .img-card img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+        
+        /* ============ شات ============ */
+        #chat-container {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: var(--card); z-index: 400; padding: 10px;
+            border-top: 2px solid var(--primary);
+            display: none;
+        }
+        #chat-messages {
+            max-height: 120px; overflow-y: auto; margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        .chat-msg {
+            padding: 5px 10px; margin: 3px 0;
+            background: rgba(0,0,0,0.05); border-radius: 10px;
+        }
+        .chat-msg.system { color: var(--accent); font-weight: bold; }
+        #chat-input-row {
+            display: flex; gap: 5px;
+        }
+        #chat-input {
+            flex: 1; padding: 10px; border-radius: 20px;
+            border: 1px solid var(--gray); background: var(--card); color: var(--text-dark);
+        }
+        #chat-send {
+            width: auto; padding: 10px 15px; margin: 0;
+            background: var(--primary); color: white; border-radius: 20px;
+        }
+        #toggle-chat-btn {
+            position: fixed; bottom: 10px; right: 10px; z-index: 350;
+            background: var(--primary); color: white; border: none;
+            border-radius: 50%; width: 45px; height: 45px;
+            font-size: 1.2rem; cursor: pointer; display: none;
+        }
+        #player-status {
+            font-size: 0.8rem; color: var(--text-light); margin: 5px 0;
+        }
+
         .rename-row {
             display: flex; gap: 10px; background: var(--card);
             padding: 10px; border-radius: 20px; margin-bottom: 10px; align-items: center;
@@ -226,6 +264,7 @@
             <div class="room-code" id="room-code-display">----</div>
             <p id="waiting-text">⏳ في انتظار انضمام اللاعب الثاني...</p>
             <p id="player-joined-text" style="display:none; color: var(--accent);">✅ اللاعب الثاني انضم! جاري البدء...</p>
+            <p id="player-status">👤 اللاعبين: <span id="player-count">1</span>/2</p>
         </div>
     </div>
     <hr style="width:100%; margin: 20px 0;">
@@ -236,7 +275,12 @@
         <button class="btn-success" onclick="joinRoom()">انضم</button>
         <p id="join-status" style="color: var(--danger);"></p>
     </div>
-    <button class="btn-back" onclick="showScreen('screen-start')">🔙 رجوع</button>
+    <!-- إعادة اتصال -->
+    <div id="reconnect-area" style="display:none; margin-top:20px;">
+        <p style="color: var(--danger);">⚠️ انقطع الاتصال بالغرفة</p>
+        <button class="btn-online" onclick="reconnectToRoom()">🔄 إعادة اتصال</button>
+    </div>
+    <button class="btn-back" onclick="leaveRoom(); showScreen('screen-start');">🔙 رجوع</button>
 </div>
 
 <div id="screen-settings" class="screen">
@@ -317,10 +361,94 @@
     <button class="btn-back" onclick="showScreen('screen-start')">🏠 الرئيسية</button>
 </div>
 
+<!-- زر الشات -->
+<button id="toggle-chat-btn" onclick="toggleChat()">💬</button>
+
+<!-- صندوق الشات -->
+<div id="chat-container">
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+        <input type="text" id="chat-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendChat()">
+        <button id="chat-send" onclick="sendChat()">إرسال</button>
+    </div>
+</div>
+
 <script>
     const socket = io();
     let currentRoom = null, isRoomHost = false;
+    let reconnectTimer = null;
 
+    // ============ إعادة اتصال ============
+    socket.on('connect', () => {
+        console.log('✅ متصل');
+        if (currentRoom) {
+            // إعادة انضمام تلقائية
+            socket.emit('reconnect-room', currentRoom, isRoomHost);
+            addChatMsg('system', '🔄 تم إعادة الاتصال بالغرفة');
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('❌ انقطع الاتصال');
+        addChatMsg('system', '⚠️ انقطع الاتصال... جاري إعادة المحاولة');
+        document.getElementById('reconnect-area').style.display = 'block';
+    });
+
+    function reconnectToRoom() {
+        if (currentRoom) {
+            socket.emit('reconnect-room', currentRoom, isRoomHost);
+            document.getElementById('reconnect-area').style.display = 'none';
+            addChatMsg('system', '🔄 جاري إعادة الاتصال...');
+        }
+    }
+
+    // ============ شات ============
+    function toggleChat() {
+        const chat = document.getElementById('chat-container');
+        chat.style.display = chat.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function sendChat() {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if (!msg || !currentRoom) return;
+        
+        socket.emit('chat-message', currentRoom, msg);
+        addChatMsg('me', msg);
+        input.value = '';
+    }
+
+    function addChatMsg(type, msg) {
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = 'chat-msg ' + (type === 'system' ? 'system' : '');
+        div.innerHTML = type === 'system' ? msg : `<b>${type === 'me' ? 'أنت' : 'الخصم'}:</b> ${msg}`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    socket.on('chat-message', (msg) => {
+        addChatMsg('opponent', msg);
+    });
+
+    // ============ حالة اللاعبين ============
+    socket.on('player-joined', () => {
+        document.getElementById('waiting-text').style.display = 'none';
+        document.getElementById('player-joined-text').style.display = 'block';
+        document.getElementById('player-count').innerText = '2';
+        document.getElementById('toggle-chat-btn').style.display = 'block';
+        addChatMsg('system', '✅ لاعب جديد انضم للغرفة!');
+        setTimeout(() => startOnlineGame(), 1500);
+    });
+
+    socket.on('player-left', () => {
+        document.getElementById('player-count').innerText = '1';
+        document.getElementById('player-joined-text').style.display = 'none';
+        document.getElementById('waiting-text').style.display = 'block';
+        addChatMsg('system', '👋 اللاعب الآخر غادر الغرفة');
+    });
+
+    // ============ بيانات السيرفر ============
     socket.on('sync-data', (serverCategories) => {
         categories = serverCategories;
         localStorage.setItem('guess_it_v17', JSON.stringify(categories));
@@ -328,12 +456,6 @@
     });
 
     function syncToServer() { socket.emit('update-categories', categories); }
-
-    socket.on('player-joined', () => {
-        document.getElementById('waiting-text').style.display = 'none';
-        document.getElementById('player-joined-text').style.display = 'block';
-        setTimeout(() => startOnlineGame(), 1500);
-    });
 
     socket.on('game-update', (data) => {
         if (data.turn) state.currentTurn = data.turn;
@@ -344,12 +466,16 @@
         if (!isRoomHost) { state.p1Data = chars.p1; state.p2Data = chars.p2; }
     });
 
+    // ============ الغرف ============
     function createRoom() {
         socket.emit('create-room', (res) => {
             if (res.success) {
                 currentRoom = res.roomCode; isRoomHost = true;
                 document.getElementById('room-code-display').innerText = currentRoom;
                 document.getElementById('room-created').style.display = 'block';
+                document.getElementById('player-count').innerText = '1';
+                document.getElementById('toggle-chat-btn').style.display = 'block';
+                addChatMsg('system', '🎉 تم إنشاء الغرفة! في انتظار لاعب آخر...');
                 showToast('✅ تم إنشاء الغرفة!');
             }
         });
@@ -359,9 +485,26 @@
         const code = document.getElementById('join-room-input').value.trim();
         if (code.length !== 4) return document.getElementById('join-status').innerText = '❌ 4 أرقام';
         socket.emit('join-room', code, (res) => {
-            if (res.success) { currentRoom = code; isRoomHost = false; startOnlineGame(); }
-            else document.getElementById('join-status').innerText = '❌ ' + res.error;
+            if (res.success) {
+                currentRoom = code; isRoomHost = false;
+                document.getElementById('toggle-chat-btn').style.display = 'block';
+                document.getElementById('join-status').innerText = '✅ تم الانضمام!';
+                addChatMsg('system', '🎉 تم الانضمام للغرفة!');
+                startOnlineGame();
+            } else {
+                document.getElementById('join-status').innerText = '❌ ' + res.error;
+            }
         });
+    }
+
+    function leaveRoom() {
+        if (currentRoom) {
+            socket.emit('leave-room', currentRoom);
+            currentRoom = null; isRoomHost = false;
+            document.getElementById('toggle-chat-btn').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'none';
+            document.getElementById('chat-messages').innerHTML = '';
+        }
     }
 
     function startOnlineGame() {
@@ -371,6 +514,7 @@
         renderPickCat();
     }
 
+    // ============ باقي اللعبة (نفس السابق) ============
     let audioCtx = null;
     function playSound(type) {
         try {
@@ -408,7 +552,7 @@
         if (id === 'screen-settings') renderSettings();
         if (id === 'screen-rename') populateRenameSelect();
         if (id === 'screen-wheel') { drawWheel(); document.getElementById('wheel-canvas').style.transform = 'rotate(0deg)'; document.getElementById('wheel-result').innerText = ''; spinning = false; document.getElementById('spin-btn').disabled = false; }
-        if (id === 'screen-online') { document.getElementById('room-created').style.display = 'none'; document.getElementById('join-status').innerText = ''; }
+        if (id === 'screen-online') { document.getElementById('room-created').style.display = 'none'; document.getElementById('join-status').innerText = ''; document.getElementById('reconnect-area').style.display = 'none'; }
     }
     function updateTime(v) { config.time = +v; document.getElementById('timer-val').innerText = v; }
 
